@@ -1,0 +1,9 @@
+# Illustrative parameters matching the demo; no YAML runtime loader is required.
+# The demo accepts equivalent command-line options.
+seed: 42
+embedding_dim: 8
+temperature: 0.1
+fusion: mean
+aggregation: mean
+physical_samples: 6
+observations_per_sample: 3
