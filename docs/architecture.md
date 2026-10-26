@@ -47,12 +47,30 @@ do not construct joins or reorder a mismatched table. Without IDs, the caller
 must ensure pairing. Same-class samples are still negatives; class-aware masking
 and multi-positive objectives are outside this version.
 
-Normalization rejects zero vectors and rescales finite coordinates before
-computing norms to reduce overflow. Half precision is promoted to float32 for
-cosine/loss calculations. Cross-entropy is computed directly on logits, not
-manual exponentials. Nonfinite logits/loss at an unrepresentable temperature
-fail clearly. Validation preserves gradients but performs scalar checks, which
-can synchronize accelerator execution; CPU is the validated target.
+InfoNCE rejects zero vectors and uses epsilon-regularized L2 normalization:
+`x / max(||x||_2, eps)`, with `eps = sqrt(torch.finfo(compute_dtype).tiny)`.
+This is the threshold below which squared norms leave the dtype's normal range:
+approximately 1.0842e-19 for float32 and 1.4917e-154 for float64. Half/bfloat16
+inputs are promoted to float32 before choosing the epsilon. The norm floor is
+numerical regularization, not coordinate clipping or gradient clipping. Above
+it, the ordinary cosine objective and gradients are preserved; below it,
+vectors are intentionally not forced to unit length. Exact unit normalization
+at arbitrarily small magnitudes has derivatives proportional to 1/||x||, which
+cannot always be represented in the input dtype.
+
+For overflow protection, InfoNCE first divides by `max(max(abs(x)), 1)` and
+passes an explicit epsilon to torch.nn.functional.normalize. A row scaled this
+way has norm at least one, so epsilon is inactive for scaled rows; otherwise
+it applies directly to the original row norm. This implements the stated norm
+floor while avoiding the previous tiny pre-scaling divisor and its overflowing
+backward reciprocal. Retrieval's exact-cosine normalization is unchanged.
+
+Cross-entropy is computed directly on logits, not manual exponentials.
+Nonfinite logits/loss at an unrepresentable temperature fail clearly; this
+fix does not promise finite gradients for every extreme temperature/dtype
+combination or arbitrarily large upstream gradient. Validation preserves
+gradients but performs scalar checks, which can synchronize accelerator
+execution; CPU is the validated target.
 
 ## Evaluation and downstream uses
 

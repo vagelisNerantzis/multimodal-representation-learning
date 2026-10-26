@@ -5,7 +5,19 @@ from numbers import Real
 import torch
 from torch import Tensor
 from torch.nn import functional as F
-from ..validation.inputs import validate_pair, validate_sample_ids, unit_vectors
+from ..validation.inputs import validate_pair, validate_sample_ids
+
+
+def _normalize_for_alignment(value: Tensor) -> Tensor:
+    """Compute x/max(||x||_2, eps) without dividing by a subnormal row scale."""
+    value = value.float() if value.dtype in (torch.float16, torch.bfloat16) else value
+    # sqrt(tiny) is the dtype's squared-norm underflow threshold. Unlike an
+    # arbitrary epsilon, it follows the arithmetic precision used by the loss.
+    eps = math.sqrt(torch.finfo(value.dtype).tiny)
+    # Rescale only large rows. Divisors stay >=1; their backward cannot create
+    # the unrepresentable reciprocal that caused NaNs for subnormal inputs.
+    scale = value.abs().amax(dim=1, keepdim=True).clamp_min(1.0)
+    return F.normalize(value / scale, p=2, dim=1, eps=eps)
 
 
 def symmetric_info_nce(a: Tensor, b: Tensor, *, temperature: float = 0.1,
@@ -17,6 +29,12 @@ def symmetric_info_nce(a: Tensor, b: Tensor, *, temperature: float = 0.1,
     verify this contract and reject duplicate samples (false negatives). Without
     IDs this invariant is the caller's responsibility. Other samples are negatives,
     even if they have the same class; no class-aware masking is implemented.
+
+    L2 norms use an explicit floor sqrt(finfo(compute_dtype).tiny), about
+    1.084e-19 in float32. Below this floor normalization is epsilon-regularized,
+    ensuring finite near-zero gradients; ordinary norms keep the cosine loss.
+    Half/bfloat16 computation is promoted to float32. Exactly zero rows remain
+    invalid. No embedding coordinates or gradients are clipped.
     """
     if isinstance(temperature, bool) or not isinstance(temperature, Real):
         raise TypeError("temperature must be a finite positive real number")
@@ -32,7 +50,7 @@ def symmetric_info_nce(a: Tensor, b: Tensor, *, temperature: float = 0.1,
         ids_b = validate_sample_ids(sample_ids_b, len(b), unique=True)
         if ids_a != ids_b:
             raise ValueError("Paired sample IDs must match row by row")
-    logits = unit_vectors(a) @ unit_vectors(b).T / float(temperature)
+    logits = _normalize_for_alignment(a) @ _normalize_for_alignment(b).T / float(temperature)
     if not torch.isfinite(logits).all().item():
         raise ValueError("Temperature is too small for a finite similarity matrix")
     targets = torch.arange(len(a), device=a.device)

@@ -139,8 +139,11 @@ Whole modalities may be omitted as None with allow_missing=True; per-row masks
 are unsupported. No implicit modality imputation or projection is performed.
 
 InfoNCE uses off-diagonal samples as negatives, including same-class samples.
-Unique paired IDs are checked when supplied; otherwise physical pairing is the
-caller's responsibility. Aggregate repeated observations before computing loss
+Its L2 norm floor is `sqrt(torch.finfo(compute_dtype).tiny)` (about 1.084e-19 for
+float32); near-zero inputs use epsilon-regularized normalization to avoid
+unrepresentable gradients. Ordinary norms keep the cosine objective, and exact
+zero vectors remain invalid. Unique paired IDs are checked when supplied;
+otherwise physical pairing is the caller's responsibility. Aggregate repeated observations before computing loss
 or implement a justified multi-positive objective separately.
 
 Aggregation cannot detect cross-partition mixing without partition metadata:
