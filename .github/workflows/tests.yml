@@ -1,0 +1,65 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Python 3.12 / CPU
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CUDA_VISIBLE_DEVICES: ""
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Install project and development dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Compile package, tests and example
+        run: python -m compileall src tests examples
+      - name: Run full test suite
+        run: pytest -q
+      - name: Run synthetic multimodal demo
+        run: python examples/synthetic_multimodal_demo.py
+      - name: Verify package version
+        shell: python
+        run: |
+          import importlib.metadata
+          import pathlib
+          import tomllib
+          import multimodal_repr
+
+          project = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))
+          assert project["project"]["version"] == multimodal_repr.__version__ == importlib.metadata.version("multimodal-representation-learning") == "0.1.0"
+          print("Package, project and distribution version: 0.1.0")
+      - name: Check near-zero InfoNCE gradients
+        shell: python
+        run: |
+          import torch
+          from multimodal_repr.losses.contrastive import symmetric_info_nce
+
+          a = ((torch.eye(3, dtype=torch.float32) + 0.1) * 1e-40).requires_grad_()
+          b = ((torch.eye(3, dtype=torch.float32) + 0.2) * 1e-40).requires_grad_()
+          loss = symmetric_info_nce(a, b, temperature=0.2)
+          assert torch.isfinite(loss).item(), "InfoNCE loss is NaN or Inf"
+          loss.backward()
+          for name, value in (("a", a), ("b", b)):
+              assert value.grad is not None, f"Missing gradient for {name}"
+              assert torch.isfinite(value.grad).all().item(), f"NaN or Inf gradient for {name}"
+          print(f"Near-zero InfoNCE passed: loss={loss.item():.10f}; both gradients finite")

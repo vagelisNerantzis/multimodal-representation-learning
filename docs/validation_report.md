@@ -1,6 +1,6 @@
 # Validation report
 
-Version: 0.1.0. Validation date: 2026-10-26.
+Version: 0.1.0. Latest validation date: 2026-10-27.
 
 ## Environment and executed checks
 
@@ -62,6 +62,7 @@ Local environments, validation logs, generated metadata and Git internals are
 excluded from this public file inventory.
 
 ```text
+.github/workflows/tests.yml
 .gitignore
 LICENSE
 README.md
@@ -175,3 +176,72 @@ for value in (a, b):
 The numerical guarantee is targeted: it does not promise finite derivatives
 for every extreme temperature/dtype combination or arbitrarily large upstream
 gradient. All tests and measurements above used CPU synthetic inputs only.
+
+
+## GitHub Actions CI for v0.1.0
+
+Validation date: 2026-10-27. Workflow: `.github/workflows/tests.yml`.
+
+### Workflow scope
+
+- Triggers: pushes to `main` and pull requests targeting `main`.
+- Runner: `ubuntu-latest`; Python **3.12**; CPU execution only.
+- Official actions: `actions/checkout@v7` and `actions/setup-python@v7`.
+  Stable major versions were checked against the official
+  [checkout release](https://github.com/actions/checkout/releases/tag/v7.0.1)
+  and [setup-python release](https://github.com/actions/setup-python/releases/tag/v7.1.0).
+- Named steps check out code without retaining credentials, set up Python,
+  upgrade pip, install CPU PyTorch, and install the project with its dev extra
+  using `python -m pip install -e ".[dev]"`.
+- Compilation: `python -m compileall src tests examples`.
+- Full existing 60-test suite: `pytest -q`.
+- Synthetic demo: `python examples/synthetic_multimodal_demo.py`.
+- Package import/version check verifies project metadata, installed distribution
+  metadata and `multimodal_repr.__version__` all equal **0.1.0**.
+- Near-zero smoke check calls the public symmetric_info_nce API with paired
+  float32 embeddings around 1e-40 and requires_grad=True. It asserts a finite
+  loss, calls backward(), and asserts both gradients exist and contain neither
+  NaN nor Inf. It fails the job on any invalid result.
+- No dataset, GPU, repository secret or post-install application network access
+  is required. Only dependency installation needs package downloads. The job
+  uses read-only repository permissions; there are no publishing/release steps.
+- README includes the native GitHub Actions badge for this exact workflow and
+  repository. The badge is dynamic, not a claim of a completed hosted run.
+
+### Structural and local-equivalent validation
+
+**GitHub-hosted CI has not run for this new workflow.** Its real Python 3.12 /
+Ubuntu execution must occur after push. All results below are local-equivalent
+checks on the existing Python **3.11.15** environment, not a hosted-CI success
+claim. Existing ML dependencies were reused; no CPU-wheel replacement or pip
+upgrade was needed locally.
+
+- Complete YAML was parsed, with duplicate mapping keys rejected. Main-only
+  event branches, Ubuntu runner, Python version, permissions, official action
+  majors and all ten named steps were checked. Indentation contains no tabs.
+  Both embedded Python blocks compiled and ran exactly as stored in the YAML.
+- Compilation passed, exit 0.
+- Editable installation with the dev extra passed, exit 0. Local flags
+  `--no-build-isolation --no-index --disable-pip-version-check` reused existing
+  dependencies without package-index access. Installation changed only the
+  existing repository-local virtual environment.
+- Full suite: **60 passed, 0 failed, 0 skipped**. The inherited environment's
+  pre-existing pynvml warning remains nonfatal.
+- Synthetic demo passed, exit 0. Constructed example loss remains
+  0.00022848813387099653; A-to-B retrieval remains 1.0. These are synthetic
+  mechanics checks, not scientific generalization claims.
+- Exact workflow version/import block passed: **0.1.0** everywhere.
+- Exact workflow near-zero smoke passed: loss **1.0986123085**, gradients finite
+  in both modalities. Six injected failure controls confirmed the guard rejects
+  NaN/Inf forward losses and NaN/Inf gradients in either modality.
+- Scientific package code, existing tests, example and pyproject were verified
+  unchanged with `git diff --exit-code` restricted to those paths.
+- Public file scan found no machine-specific paths, private information or
+  credential assignments. Git diff/status were inspected before the new commit.
+
+### Git handoff
+
+Only the workflow, README badge and this report changed. The existing origin
+remote is retained unchanged. The new commit is separate from the numerical
+stability commit; no existing commit is amended. No push, tag or release is
+performed. The final response reports the resulting local commit and status.

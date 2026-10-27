@@ -1,5 +1,7 @@
 # Multimodal Representation Learning
 
+[![Tests](https://github.com/vagelisNerantzis/multimodal-representation-learning/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/vagelisNerantzis/multimodal-representation-learning/actions/workflows/tests.yml)
+
 A small PyTorch package for aligned multimodal embeddings, fusion and
 physical-sample-level representation evaluation. Version **0.1.0**.
 
